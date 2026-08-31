@@ -764,27 +764,82 @@ const AddProductFlow=()=>{
   const [voiceText,setVoiceText]=useState("");
   const [isRecording,setIsRecording]=useState(false);
   const [photoUploaded,setPhotoUploaded]=useState(false);
+  const [photoData,setPhotoData]=useState(null);
   const [language,setLanguage]=useState('en');
   const [editedPrice,setEditedPrice]=useState('');
   const [editedTitle,setEditedTitle]=useState('');
   const [editedDesc,setEditedDesc]=useState('');
+  const [editedMaterials,setEditedMaterials]=useState([]);
+  const [editedTags,setEditedTags]=useState([]);
   const [showEnhance,setShowEnhance]=useState(false);
   const [enhanced,setEnhanced]=useState(false);
   const [publishStep,setPublishStep]=useState(0);
+  const [isAnalyzing,setIsAnalyzing]=useState(false);
+  const [analyzeError,setAnalyzeError]=useState(null);
+  const fileInputRef=React.useRef(null);
 
-  // Auto-advance from loading (step 1) to results (step 2)
-  useEffect(()=>{
-    if(catFlow.step===1){
-      const t=setTimeout(()=>{
-        const result=AI.analyzeProduct('photo',voiceText||'handwoven cotton saree traditional weaving');
-        setCatFlow(p=>({...p,step:2,result,finalPrice:result.price}));
-        setEditedTitle(result.title);
-        setEditedDesc(result.description);
-        setEditedPrice(String(result.price));
-      },2200);
-      return ()=>clearTimeout(t);
+  // --- REAL IMAGE UPLOAD ---
+  const handlePhotoSelect=(e)=>{
+    const file=e.target.files?.[0];
+    if(!file)return;
+    const allowed=['image/jpeg','image/jpg','image/png','image/webp'];
+    if(!allowed.includes(file.type)){
+      showNotif('Please select a JPG, PNG or WEBP image');
+      return;
     }
-  },[catFlow.step]);
+    if(file.size>10*1024*1024){
+      showNotif('Image must be under 10MB');
+      return;
+    }
+    const reader=new FileReader();
+    reader.onload=()=>{
+      setPhotoData(reader.result);
+      setPhotoUploaded(true);
+      setAnalyzeError(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // --- REAL AI ANALYSIS WITH FALLBACK ---
+  const runAnalysis=async(photoData,voiceDesc)=>{
+    setIsAnalyzing(true);
+    setAnalyzeError(null);
+    setCatFlow(p=>({...p,step:1}));
+    try{
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),8000);
+      const resp=await fetch('/api/analyze',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({image:photoData,description:voiceDesc||''}),
+        signal:controller.signal
+      });
+      clearTimeout(timeout);
+      if(!resp.ok){
+        const errData=await resp.json().catch(()=>({}));
+        throw new Error(errData.error||'AI service unavailable');
+      }
+      const result=await resp.json();
+      setCatFlow(p=>({...p,step:2,result,finalPrice:result.price}));
+      setEditedTitle(result.title);
+      setEditedDesc(result.description);
+      setEditedPrice(String(result.price));
+      setEditedMaterials([...result.materials]);
+      setEditedTags([...result.tags]);
+      setIsAnalyzing(false);
+    }catch(err){
+      console.warn('Real AI failed, using fallback:',err.message);
+      const fallback=AI.analyzeProduct('photo',voiceDesc||'handwoven cotton saree traditional weaving');
+      setCatFlow(p=>({...p,step:2,result:fallback,finalPrice:fallback.price}));
+      setEditedTitle(fallback.title);
+      setEditedDesc(fallback.description);
+      setEditedPrice(String(fallback.price));
+      setEditedMaterials([...fallback.materials]);
+      setEditedTags([...fallback.tags]);
+      setIsAnalyzing(false);
+      setAnalyzeError('Using offline mode \u2014 AI service unavailable');
+    }
+  };
 
   const exampleTranscripts=[
     "This is a handwoven cotton saree. I made it by hand using traditional weaving techniques. It took me about 8 days to complete.",
@@ -802,14 +857,7 @@ const AddProductFlow=()=>{
     },2000);
   };
 
-  const handleAnalyze=()=>{
-    setCatFlow({...catFlow,step:2,voiceDesc:voiceText,photoDesc:'uploaded'});
-    const result=AI.analyzeProduct('photo',voiceText);
-    setCatFlow(p=>({...p,step:2,result,finalPrice:result.price}));
-    setEditedTitle(result.title);
-    setEditedDesc(result.description);
-    setEditedPrice(String(result.price));
-  };
+
 
   const handlePublish=()=>{
     setPublishStep(1);
@@ -828,14 +876,33 @@ const AddProductFlow=()=>{
         <p className="text-warm-500 mb-8">Take a photo and tell us about your product. We'll help create the listing.</p>
 
         <div className="space-y-4 mb-8">
-          <button onClick={()=>setPhotoUploaded(true)} className={`w-full border-2 border-dashed rounded-2xl py-8 flex flex-col items-center gap-3 transition-all ${photoUploaded?'border-forest-400 bg-forest-50':'border-warm-200 bg-white hover:border-terra-300'}`}>
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${photoUploaded?'bg-forest-100 text-forest-600':'bg-warm-100 text-warm-400'}`}>
-              {photoUploaded?<Icon name="check" size={28}/>:<Icon name="camera" size={28}/>}
-            </div>
-            <div>
-              <p className={`font-semibold ${photoUploaded?'text-forest-700':'text-warm-700'}`}>{photoUploaded?'Photo uploaded ✓':'Upload / Take Photos'}</p>
-              <p className="text-xs text-warm-400 mt-1">Tap to select from gallery or camera</p>
-            </div>
+          <input ref={fileInputRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={handlePhotoSelect} className="hidden"/>
+          <button onClick={()=>fileInputRef.current?.click()} className={`w-full border-2 border-dashed rounded-2xl ${photoUploaded?'py-4':'py-8'} flex flex-col items-center gap-3 transition-all ${photoUploaded?'border-forest-400 bg-forest-50':'border-warm-200 bg-white hover:border-terra-300'}`}>            {photoUploaded&&photoData?(
+              <>
+                <img src={photoData} alt="Uploaded product" className="w-full h-40 object-cover rounded-xl"/>
+                <div className="flex items-center gap-2">
+                  <Icon name="check" size={16} className="text-forest-600"/>
+                  <p className="font-semibold text-forest-700 text-sm">Photo uploaded — tap to change</p>
+                </div>
+              </>
+            ):photoUploaded?(
+              <>
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-forest-100 text-forest-600">
+                  <Icon name="check" size={28}/>
+                </div>
+                <p className="font-semibold text-forest-700">Photo uploaded ✓</p>
+              </>
+            ):(
+              <>
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-warm-100 text-warm-400">
+                  <Icon name="camera" size={28}/>
+                </div>
+                <div>
+                  <p className="font-semibold text-warm-700">Upload / Take Photos</p>
+                  <p className="text-xs text-warm-400 mt-1">Tap to select from gallery or camera</p>
+                </div>
+              </>
+            )}
           </button>
 
           <div className="bg-white rounded-2xl p-5 card-shadow">
@@ -853,15 +920,30 @@ const AddProductFlow=()=>{
           </div>
         </div>
 
-        <button onClick={()=>setCatFlow({...catFlow,step:1})} disabled={!photoUploaded||!voiceText}
-          className={`w-full py-4 rounded-2xl font-semibold text-lg transition-all flex items-center justify-center gap-2 ${photoUploaded&&voiceText?'bg-terra-500 text-white card-shadow-lg active:scale-[.97]':'bg-warm-200 text-warm-400 cursor-not-allowed'}`}>
-          <Icon name="sparkles" size={20}/> AI Analyze Product
+        {analyzeError&&(
+          <div className="bg-mustard-50 border border-mustard-200 rounded-2xl p-4 mb-4 flex items-start gap-3 animate-slide-up">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <p className="text-sm font-medium text-mustard-800">{analyzeError}</p>
+              <p className="text-xs text-mustard-600 mt-1">You can still review and edit the listing below.</p>
+            </div>
+          </div>
+        )}
+        <button onClick={()=>runAnalysis(photoData,voiceText)} disabled={!photoUploaded||isAnalyzing}
+          className={`w-full py-4 rounded-2xl font-semibold text-lg transition-all flex items-center justify-center gap-2 ${photoUploaded?'bg-terra-500 text-white card-shadow-lg active:scale-[.97]':'bg-warm-200 text-warm-400 cursor-not-allowed'}`}>
+          <Icon name="sparkles" size={20}/> {isAnalyzing?'Analyzing...':'AI Analyze Product'}
         </button>
       </div>
     );
   }
 
   if(catFlow.step===1){
+    const steps=[
+      {t:"Uploading image to AI...",delay:0},
+      {t:"Analyzing visual details...",delay:1500},
+      {t:"Identifying product type...",delay:3000},
+      {t:"Suggesting materials & price...",delay:4500},
+    ];
     return (
       <div className="px-5 pt-12 flex flex-col items-center justify-center min-h-[80vh]">
         <div className="animate-bounce-in mb-6">
@@ -870,14 +952,14 @@ const AddProductFlow=()=>{
           </div>
         </div>
         <h2 className="text-xl font-bold text-terra-800 mb-2 animate-slide-up">Analyzing your craft...</h2>
-        <p className="text-warm-400 text-sm mb-8 animate-slide-up delay-100">Our AI is understanding your product</p>
+        <p className="text-warm-400 text-sm mb-8 animate-slide-up delay-100">Our AI is examining your product photo</p>
         <div className="w-full max-w-xs space-y-3">
-          {["Identifying product type...","Analyzing materials...","Suggesting category...","Setting price range..."].map((t,i)=>(
-            <div key={i} className="flex items-center gap-3 animate-fade-in" style={{animationDelay:`${i*400}ms`}}>
-              <div className="w-5 h-5 rounded-full bg-forest-100 flex items-center justify-center" style={{animationDelay:`${i*400+300}ms`}}>
+          {steps.map((s,i)=>(
+            <div key={i} className="flex items-center gap-3 animate-fade-in" style={{animationDelay:`${s.delay}ms`}}>
+              <div className="w-5 h-5 rounded-full bg-forest-100 flex items-center justify-center" style={{animationDelay:`${s.delay+300}ms`}}>
                 <Icon name="check" size={12} className="text-forest-600"/>
               </div>
-              <span className="text-sm text-warm-600">{t}</span>
+              <span className="text-sm text-warm-600">{s.t}</span>
             </div>
           ))}
         </div>
@@ -890,7 +972,7 @@ const AddProductFlow=()=>{
     return (
       <div className="px-5 pt-12 pb-8">
         <div className="flex items-center justify-between mb-4">
-          <button onClick={()=>setCatFlow({...catFlow,step:0})} className="flex items-center gap-1 text-warm-500">
+          <button onClick={()=>{setAnalyzeError(null);setCatFlow({...catFlow,step:0});}} className="flex items-center gap-1 text-warm-500">
             <Icon name="arrowLeft" size={20}/> Back
           </button>
           <div className="flex items-center gap-2">
@@ -937,16 +1019,34 @@ const AddProductFlow=()=>{
           </div>
 
           <div className="bg-white rounded-2xl p-4 card-shadow animate-slide-up delay-400">
-            <label className="text-xs font-medium text-warm-400 uppercase tracking-wide mb-2 block">Materials</label>
-            <div className="flex flex-wrap gap-2">
-              {r.materials.map(m=><Badge key={m} variant="terra">{m}</Badge>)}
+            <label className="text-xs font-medium text-warm-400 uppercase tracking-wide mb-2 block">Materials (tap × to remove)</label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {editedMaterials.map((m,i)=>(
+                <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-terra-100 text-terra-700">
+                  {m}
+                  <button onClick={()=>setEditedMaterials(prev=>prev.filter((_,j)=>j!==i))} className="ml-0.5 text-terra-400 hover:text-red-500 text-sm leading-none">×</button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input id="addMaterial" placeholder="Add material..." className="flex-1 bg-warm-50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-terra-300" onKeyDown={e=>{if(e.key==='Enter'&&e.target.value.trim()){setEditedMaterials(prev=>[...prev,e.target.value.trim()]);e.target.value='';}}} />
+              <button onClick={()=>{const inp=document.getElementById('addMaterial');if(inp&&inp.value.trim()){setEditedMaterials(prev=>[...prev,inp.value.trim()]);inp.value='';}}} className="px-3 py-2 bg-terra-50 text-terra-600 rounded-lg text-sm font-medium border border-terra-100">Add</button>
             </div>
           </div>
 
           <div className="bg-white rounded-2xl p-4 card-shadow animate-slide-up delay-500">
-            <label className="text-xs font-medium text-warm-400 uppercase tracking-wide mb-2 block">Tags</label>
-            <div className="flex flex-wrap gap-2">
-              {r.tags.map(t=><Badge key={t} variant="default">#{t}</Badge>)}
+            <label className="text-xs font-medium text-warm-400 uppercase tracking-wide mb-2 block">Tags (tap × to remove)</label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {editedTags.map((t,i)=>(
+                <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-warm-100 text-warm-700">
+                  #{t}
+                  <button onClick={()=>setEditedTags(prev=>prev.filter((_,j)=>j!==i))} className="ml-0.5 text-warm-400 hover:text-red-500 text-sm leading-none">×</button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input id="addTag" placeholder="Add tag..." className="flex-1 bg-warm-50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-terra-300" onKeyDown={e=>{if(e.key==='Enter'&&e.target.value.trim()){setEditedTags(prev=>[...prev,e.target.value.trim()]);e.target.value='';}}} />
+              <button onClick={()=>{const inp=document.getElementById('addTag');if(inp&&inp.value.trim()){setEditedTags(prev=>[...prev,inp.value.trim()]);inp.value='';}}} className="px-3 py-2 bg-warm-50 text-warm-600 rounded-lg text-sm font-medium border border-warm-200">Add</button>
             </div>
           </div>
 
@@ -989,13 +1089,13 @@ const AddProductFlow=()=>{
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div className="text-center">
               <div className="bg-warm-100 rounded-xl h-32 flex items-center justify-center mb-2 overflow-hidden">
-                <img src={PRODUCTS[0].images[0]} className="w-full h-full object-cover opacity-80" alt="Original"/>
+                <img src={photoData} className="w-full h-full object-cover opacity-80" alt="Original"/>
               </div>
               <span className="text-xs text-warm-400">Original</span>
             </div>
             <div className="text-center">
               <div className="bg-warm-100 rounded-xl h-32 flex items-center justify-center mb-2 overflow-hidden relative">
-                <img src={PRODUCTS[0].images[0]} className="w-full h-full object-cover" alt="Enhanced" style={{filter:'brightness(1.1) contrast(1.05)'}}/>
+                <img src={photoData} className="w-full h-full object-cover" alt="Enhanced" style={{filter:'brightness(1.1) contrast(1.08) saturate(1.1)'}}/>
                 <div className="absolute top-1 right-1 bg-forest-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-medium">AI Enhanced</div>
               </div>
               <span className="text-xs text-forest-500 font-medium">Enhanced</span>
@@ -1009,10 +1109,10 @@ const AddProductFlow=()=>{
 
         {/* Action Buttons */}
         <div className="flex gap-3 mb-6">
-          <button onClick={()=>setCatFlow({...catFlow,step:0})} className="flex-1 py-3.5 rounded-2xl font-medium text-warm-600 border border-warm-200 bg-white text-sm flex items-center justify-center gap-2">
+          <button onClick={()=>{setAnalyzeError(null);setCatFlow({...catFlow,step:0});}} className="flex-1 py-3.5 rounded-2xl font-medium text-warm-600 border border-warm-200 bg-white text-sm flex items-center justify-center gap-2">
             <Icon name="edit" size={16}/> Edit
           </button>
-          <button onClick={()=>setCatFlow({...catFlow,step:0})} className="flex-1 py-3.5 rounded-2xl font-medium text-terra-600 border border-terra-200 bg-terra-50 text-sm flex items-center justify-center gap-2">
+          <button onClick={()=>{setAnalyzeError(null);setCatFlow({...catFlow,step:0});}} className="flex-1 py-3.5 rounded-2xl font-medium text-terra-600 border border-terra-200 bg-terra-50 text-sm flex items-center justify-center gap-2">
             <Icon name="refresh" size={16}/> Regenerate
           </button>
         </div>
@@ -1032,7 +1132,7 @@ const AddProductFlow=()=>{
         <p className="text-warm-500 text-sm mb-6">Review your product before publishing</p>
 
         <div className="bg-white rounded-2xl overflow-hidden card-shadow-lg mb-6 animate-scale-in">
-          <img src={PRODUCTS[0].images[0]} className="w-full h-52 object-cover" alt={editedTitle}/>
+          <img src={photoData} className="w-full h-52 object-cover" alt={editedTitle} style={enhanced?{filter:'brightness(1.1) contrast(1.08) saturate(1.1)'}:{}}/>
           <div className="p-5">
             <div className="flex items-center gap-2 mb-2">
               <VerifiedBadge/>
@@ -1041,7 +1141,7 @@ const AddProductFlow=()=>{
             <p className="text-sm text-warm-500 mb-3">{r.category}</p>
             <p className="text-sm text-warm-600 mb-3">{editedDesc}</p>
             <div className="flex flex-wrap gap-1.5 mb-3">
-              {r.materials.map(m=><Badge key={m} variant="terra">{m}</Badge>)}
+              {editedMaterials.map((m,i)=><Badge key={i} variant="terra">{m}</Badge>)}
             </div>
             <div className="flex items-center gap-2 text-sm text-warm-500 mb-1">
               <Icon name="user" size={14}/> {artisanProfile.name||'Artisan'}
