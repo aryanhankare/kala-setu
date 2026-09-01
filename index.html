@@ -873,24 +873,28 @@ const AddProductFlow=()=>{
         throw new Error(errData.error||'AI service unavailable');
       }
       const result=await resp.json();
-      setCatFlow(p=>({...p,step:2,result,finalPrice:result.price}));
+      setCatFlow(p=>({...p,step:2,result,finalPrice:result.suggestedPrice}));
       setEditedTitle(result.title);
       setEditedDesc(result.description);
-      setEditedPrice(String(result.price));
+      setEditedPrice(String(result.suggestedPrice));
       setEditedMaterials([...result.materials]);
       setEditedTags([...result.tags]);
       setIsAnalyzing(false);
     }catch(err){
       console.warn('Real AI failed, using fallback:',err.message);
       const fallback=AI.analyzeProduct('photo',voiceDesc||'handwoven cotton saree traditional weaving');
-      setCatFlow(p=>({...p,step:2,result:fallback,finalPrice:fallback.price}));
+      const fbMin=fallback.minPrice||fallback.price||1200;
+      const fbMax=fallback.maxPrice||fallback.price||2000;
+      const fbSuggested=Math.round((fbMin+fbMax)/2);
+      const fallbackWithPrice={...fallback,minPrice:fbMin,maxPrice:fbMax,suggestedPrice:fbSuggested};
+      setCatFlow(p=>({...p,step:2,result:fallbackWithPrice,finalPrice:fbSuggested}));
       setEditedTitle(fallback.title);
       setEditedDesc(fallback.description);
-      setEditedPrice(String(fallback.price));
+      setEditedPrice(String(fbSuggested));
       setEditedMaterials([...fallback.materials]);
       setEditedTags([...fallback.tags]);
       setIsAnalyzing(false);
-      setAnalyzeError('Using offline mode \u2014 AI service unavailable');
+      setAnalyzeError('AI service unavailable — using offline analysis. You can edit all fields below.');
     }
   };
 
@@ -1046,7 +1050,7 @@ const AddProductFlow=()=>{
             <span className="text-xl">⚠️</span>
             <div>
               <p className="text-sm font-medium text-mustard-800">{analyzeError}</p>
-              <p className="text-xs text-mustard-600 mt-1">You can still review and edit the listing below.</p>
+              <p className="text-xs text-mustard-600 mt-1">This is a basic offline estimate. Edit all fields below to match your product. For best results, try again when the AI service is available.</p>
             </div>
           </div>
         )}
@@ -1060,10 +1064,11 @@ const AddProductFlow=()=>{
 
   if(catFlow.step===1){
     const steps=[
-      {t:"Uploading image to AI...",delay:0},
-      {t:"Analyzing visual details...",delay:1500},
-      {t:"Identifying product type...",delay:3000},
-      {t:"Suggesting materials & price...",delay:4500},
+      {t:"Analyzing your product photo...",delay:0},
+      {t:"Identifying product type & craft...",delay:2000},
+      {t:"Understanding materials & technique...",delay:4000},
+      {t:"Creating your listing...",delay:6000},
+      {t:"Suggesting a fair price...",delay:8000},
     ];
     return (
       <div className="px-5 pt-12 flex flex-col items-center justify-center min-h-[80vh]">
@@ -1072,8 +1077,8 @@ const AddProductFlow=()=>{
             <Icon name="sparkles" size={36} className="text-white"/>
           </div>
         </div>
-        <h2 className="text-xl font-bold text-terra-800 mb-2 animate-slide-up">Analyzing your craft...</h2>
-        <p className="text-warm-400 text-sm mb-8 animate-slide-up delay-100">Our AI is examining your product photo</p>
+        <h2 className="text-xl font-bold text-terra-800 mb-2 animate-slide-up">Understanding your craft...</h2>
+        <p className="text-warm-400 text-sm mb-8 animate-slide-up delay-100">KalaSetu AI is analyzing your product photo</p>
         <div className="w-full max-w-xs space-y-3">
           {steps.map((s,i)=>(
             <div key={i} className="flex items-center gap-3 animate-fade-in" style={{animationDelay:`${s.delay}ms`}}>
@@ -1108,23 +1113,21 @@ const AddProductFlow=()=>{
           </div>
         </div>
 
-        <div className="bg-forest-50 border border-forest-200 rounded-2xl p-4 mb-5 flex items-start gap-3 animate-scale-in">
-          <Icon name="sparkles" size={20} className="text-forest-600 mt-0.5"/>
+        <div className={`${analyzeError?'bg-mustard-50 border border-mustard-200':'bg-forest-50 border border-forest-200'} rounded-2xl p-4 mb-5 flex items-start gap-3 animate-scale-in`}>
+          <Icon name="sparkles" size={20} className={`${analyzeError?'text-mustard-600':'text-forest-600'} mt-0.5`}/>
           <div>
-            <p className="font-semibold text-forest-700 text-sm">AI suggestions — review before publishing</p>
-            <p className="text-xs text-forest-600 mt-0.5">Edit any field before publishing your product</p>
+            <p className={`font-semibold ${analyzeError?'text-mustard-700':'text-forest-700'} text-sm`}>{analyzeError?'Offline analysis — review & edit below':'AI-powered listing — review before publishing'}</p>
+            <p className={`text-xs ${analyzeError?'text-mustard-600':'text-forest-600'} mt-0.5`}>Edit any field before publishing your product</p>
           </div>
         </div>
 
         <div className="space-y-4 mb-6">
           <div className="bg-white rounded-2xl p-4 card-shadow animate-slide-up">
-            <label className="text-xs font-medium text-warm-400 uppercase tracking-wide mb-2 block">AI identified</label>
-            <p className="font-bold text-terra-700 text-lg">{r.identified}</p>
-          </div>
-
-          <div className="bg-white rounded-2xl p-4 card-shadow animate-slide-up delay-100">
             <label className="text-xs font-medium text-warm-400 uppercase tracking-wide mb-2 block">Category</label>
-            <p className="font-medium text-warm-700">{r.category}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-semibold text-terra-700">{r.category}</p>
+              {r.subcategory&&<span className="text-xs bg-warm-100 text-warm-500 px-2 py-0.5 rounded-full">{r.subcategory}</span>}
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl p-4 card-shadow animate-slide-up delay-200">
@@ -1177,17 +1180,24 @@ const AddProductFlow=()=>{
               <Icon name="sparkles" size={18} className="text-mustard-600"/>
               <span className="font-semibold text-mustard-800">AI Price Suggestion</span>
             </div>
-            <div className="flex items-baseline gap-2 mb-3">
-              <span className="text-3xl font-extrabold text-terra-700">₹{r.minPrice.toLocaleString('en-IN')}</span>
-              <span className="text-warm-400">to</span>
-              <span className="text-3xl font-extrabold text-terra-700">₹{r.maxPrice.toLocaleString('en-IN')}</span>
+            <div className="flex items-center gap-3 mb-1">
+              <span className="text-3xl font-extrabold text-terra-700">₹{(r.suggestedPrice||Math.round((r.minPrice+r.maxPrice)/2)).toLocaleString('en-IN')}</span>
+              <span className="text-xs text-warm-400">suggested</span>
             </div>
+            <p className="text-xs text-warm-400 mb-3">Range: ₹{r.minPrice.toLocaleString('en-IN')} — ₹{r.maxPrice.toLocaleString('en-IN')}</p>
             <div className="bg-white/60 rounded-xl p-3 mb-4">
-              <p className="text-xs font-medium text-warm-600 mb-2">Why this price?</p>
+              <p className="text-xs font-medium text-warm-600 mb-2">Estimated based on:</p>
               <div className="space-y-1.5">
-                {["Material cost","Time spent making it","Craft complexity","Comparable products","Current demand"].map((reason,i)=>(
+                {[
+                  {icon:'📦',text:'Material cost',val:(r.materials||[]).join(', ')||'Handcrafted'},
+                  {icon:'🎨',text:'Craft complexity',val:r.subcategory||r.category},
+                  {icon:'⏱',text:'Handmade nature',val:'Artisan-crafted'},
+                  {icon:'📊',text:'Market positioning',val:'Indian handmade e-commerce'},
+                ].map((reason,i)=>(
                   <div key={i} className="flex items-center gap-2 text-xs text-warm-600">
-                    <div className="w-1.5 h-1.5 rounded-full bg-mustard-400"/> {reason}
+                    <span>{reason.icon}</span>
+                    <span className="font-medium">{reason.text}</span>
+                    <span className="text-warm-400">— {reason.val}</span>
                   </div>
                 ))}
               </div>
@@ -1197,7 +1207,7 @@ const AddProductFlow=()=>{
               <input type="number" value={editedPrice} onChange={e=>setEditedPrice(e.target.value)}
                 className="w-24 text-lg font-bold text-terra-700 bg-white rounded-lg px-3 py-1.5 border border-warm-200 focus:border-terra-300 focus:outline-none"/>
             </div>
-            <p className="text-xs text-warm-500 italic">You decide the final price.</p>
+            <p className="text-xs text-warm-500 italic">This is an AI-assisted estimate. You decide the final price.</p>
           </div>
         </div>
 
