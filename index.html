@@ -361,16 +361,31 @@ const AI={
     {icon:"💡",text:"Similar sarees are selling between ₹2,800–₹3,600",type:"pricing"},
     {icon:"📸",text:"Listings with clear product photos receive 3x more views",type:"tip"},
   ],
-  chat:(msg)=>{
-    const lower=msg.toLowerCase();
-    if(lower.includes("price"))return "Based on similar handmade products, I'd suggest pricing between ₹2,400 and ₹3,200. This accounts for material cost, your time, and current market demand. Would you like me to analyze a specific product?";
-    if(lower.includes("order"))return "You've received 24 orders this month — that's up 18% from last month! Your handloom products are the most popular. Keep up the great work! 🎉";
-    if(lower.includes("photo")||lower.includes("image"))return "Clear product photos make a big difference! I recommend using natural light, a simple background, and showing the product from multiple angles. Would you like me to enhance your current photos?";
-    if(lower.includes("translat"))return "I can translate your product listings into Hindi, Marathi, Bengali, Tamil, and more. This helps buyers from different regions discover your crafts. Which product would you like me to translate?";
-    if(lower.includes("improve")||lower.includes("listing"))return "I'd be happy to help improve your listings! Common improvements include: clearer descriptions, better photos, more detailed materials info, and competitive pricing. Which listing would you like to work on?";
-    if(lower.includes("next")||lower.includes("make"))return "Based on current market trends, handwoven textiles and traditional jewellery are in high demand. Cotton products and natural-dye items are trending especially well right now. 📊";
-    if(lower.includes("hello")||lower.includes("hi")||lower.includes("help"))return "Namaste! 🙏 I'm KalaSetu AI, your digital business assistant. I can help you with pricing, translations, improving listings, understanding orders, and growing your craft business. What would you like to know?";
-    return "That's a great question! I can help you with pricing your products, translating listings, improving your product photos, analyzing your sales, and suggesting what to make next. Just ask me anything about your craft business! 🎨";
+  chat:async()=>{},
+};
+
+// Async chat function that calls the Gemini API
+const chatWithAI=async(msg,context)=>{
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),15000);
+  try{
+    const resp=await fetch('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message:msg,context:context||{}}),
+      signal:controller.signal
+    });
+    clearTimeout(timeout);
+    if(!resp.ok){
+      const errData=await resp.json().catch(()=>({}));
+      throw new Error(errData.error||'AI service unavailable');
+    }
+    const data=await resp.json();
+    return data.reply;
+  }catch(e){
+    clearTimeout(timeout);
+    if(e.name==='AbortError')throw new Error('AI took too long to respond. Please try again.');
+    throw e;
   }
 };
 
@@ -1332,7 +1347,14 @@ const ArtisanProducts=()=>{
   const allProducts=[...PRODUCTS,...myProducts];
 
   const startEdit=(p)=>{setEditingProduct(p);setEditName(p.name);setEditPrice(String(p.price));setEditDesc(p.description);};
-  const saveEdit=()=>{setEditingProduct(null);showNotif('Product updated! ✅');};
+  const saveEdit=()=>{
+    if(!editingProduct)return;
+    const updated=myProducts.map(p=>p.id===editingProduct.id?{...p,name:editName,price:parseInt(editPrice)||p.price,description:editDesc}:p);
+    setMyProducts(updated);
+    try{localStorage.setItem('kalasetu_products',JSON.stringify(updated));}catch(e){}
+    setEditingProduct(null);
+    showNotif('Product updated! ✅');
+  };
   const deleteProduct=(id)=>{
     const updated=myProducts.filter(p=>p.id!==id);
     setMyProducts(updated);
@@ -1594,24 +1616,61 @@ const ArtisanInsights=()=>{
 
 // ==================== AI ASSISTANT ====================
 const AIAssistant=()=>{
+  const {artisanProfile,catFlow,myProducts}=useContext(AppContext);
   const [messages,setMessages]=useState([
     {from:'ai',text:"Namaste! 🙏 I'm KalaSetu AI, your digital business assistant. How can I help you today?"},
   ]);
   const [input,setInput]=useState('');
+  const [isLoading,setIsLoading]=useState(false);
   const messagesEnd=useRef(null);
 
   useEffect(()=>{messagesEnd.current?.scrollIntoView({behavior:'smooth'});},[messages]);
 
   const quickActions=["Why am I not getting orders?","Suggest a price","Translate product","What should I make next?"];
 
-  const send=(msg)=>{
+  // Build context for the AI
+  const buildContext=()=>{
+    const ctx={};
+    if(artisanProfile.name)ctx.artisanName=artisanProfile.name;
+    if(artisanProfile.craft)ctx.artisanCraft=artisanProfile.craft;
+    if(artisanProfile.village||artisanProfile.state)ctx.artisanLocation=[artisanProfile.village,artisanProfile.state].filter(Boolean).join(', ');
+    if(catFlow.result){
+      ctx.productName=catFlow.result.title||catFlow.result.identified;
+      ctx.productCategory=catFlow.result.category;
+      ctx.productPrice=catFlow.result.price||catFlow.result.minPrice+'-'+catFlow.result.maxPrice;
+      ctx.productDescription=catFlow.result.description;
+      ctx.productMaterials=(catFlow.result.materials||[]).join(', ');
+      ctx.productTags=(catFlow.result.tags||[]).join(', ');
+    }
+    if(myProducts&&myProducts.length>0){
+      const latest=myProducts[0];
+      if(!ctx.productName){
+        ctx.productName=latest.name;
+        ctx.productCategory=latest.category;
+        ctx.productPrice=latest.price;
+        ctx.productDescription=latest.description;
+        ctx.productMaterials=(latest.materials||[]).join(', ');
+        ctx.productTags=(latest.tags||[]).join(', ');
+      }
+    }
+    return ctx;
+  };
+
+  const send=async(msg)=>{
     const text=msg||input;
-    if(!text.trim())return;
+    if(!text.trim()||isLoading)return;
     setMessages(p=>[...p,{from:'user',text}]);
     setInput('');
-    setTimeout(()=>{
-      setMessages(p=>[...p,{from:'ai',text:AI.chat(text)}]);
-    },800);
+    setIsLoading(true);
+    try{
+      const reply=await chatWithAI(text,buildContext());
+      setMessages(p=>[...p,{from:'ai',text:reply}]);
+    }catch(e){
+      setMessages(p=>[...p,{from:'ai',text:"I'm having trouble connecting right now. Please try again."}]);
+      console.error('Chat error:',e.message||e);
+    }finally{
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -1634,13 +1693,20 @@ const AIAssistant=()=>{
             </div>
           </div>
         ))}
+        {isLoading&&(
+          <div className="flex justify-start">
+            <div className="bg-white text-warm-500 card-shadow rounded-2xl rounded-bl-md px-4 py-3 text-sm flex items-center gap-2">
+              <span className="animate-pulse">Thinking</span><span className="flex gap-0.5"><span className="w-1 h-1 bg-warm-400 rounded-full animate-bounce" style={{animationDelay:'0ms'}}/><span className="w-1 h-1 bg-warm-400 rounded-full animate-bounce" style={{animationDelay:'150ms'}}/><span className="w-1 h-1 bg-warm-400 rounded-full animate-bounce" style={{animationDelay:'300ms'}}/></span>
+            </div>
+          </div>
+        )}
         <div ref={messagesEnd}/>
       </div>
 
-      {messages.length<=1&&(
+      {messages.length<=1&&!isLoading&&(
         <div className="px-5 pb-2 flex flex-wrap gap-2">
           {quickActions.map((qa,i)=>(
-            <button key={i} onClick={()=>send(qa)} className="text-xs bg-white border border-warm-200 text-warm-600 px-3 py-2 rounded-xl hover:bg-warm-50 transition-all">
+            <button key={i} onClick={()=>send(qa)} disabled={isLoading} className="text-xs bg-white border border-warm-200 text-warm-600 px-3 py-2 rounded-xl hover:bg-warm-50 transition-all disabled:opacity-50">
               {qa}
             </button>
           ))}
@@ -1648,9 +1714,11 @@ const AIAssistant=()=>{
       )}
 
       <div className="px-5 py-3 bg-white border-t border-warm-100 flex gap-2">
-        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()}
-          placeholder="Ask anything about your craft business..." className="flex-1 bg-warm-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-terra-200"/>
-        <button onClick={()=>send()} className="w-11 h-11 bg-terra-500 rounded-xl flex items-center justify-center text-white">
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!isLoading&&send()}
+          disabled={isLoading}
+          placeholder={isLoading?'KalaSetu AI is thinking...':'Ask anything about your craft business...'}
+          className="flex-1 bg-warm-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-terra-200 disabled:opacity-50"/>
+        <button onClick={()=>send()} disabled={isLoading||!input.trim()} className="w-11 h-11 bg-terra-500 rounded-xl flex items-center justify-center text-white disabled:opacity-50 disabled:cursor-not-allowed">
           <Icon name="send" size={18}/>
         </button>
       </div>
@@ -1823,11 +1891,12 @@ const BuyerNav=()=>{
 
 // ==================== BUYER HOME ====================
 const BuyerHome=()=>{
-  const {setPage,setSelectedProduct,setSelectedArtisan,setSearchQuery}=useContext(AppContext);
+  const {setPage,setSelectedProduct,setSelectedArtisan,setSearchQuery,myProducts}=useContext(AppContext);
+  const allProducts=[...PRODUCTS,...(myProducts||[])];
   const featuredArtisans=ARTISANS.slice(0,4);
-  const recommended=PRODUCTS.slice(0,4);
-  const fromMH=PRODUCTS.filter(p=>p.region==='Maharashtra');
-  const trending=PRODUCTS.slice(4,8);
+  const recommended=allProducts.slice(0,4);
+  const fromMH=allProducts.filter(p=>p.region==='Maharashtra');
+  const trending=allProducts.slice(4,8);
 
   return (
     <div className="pt-12">
@@ -1911,7 +1980,7 @@ const BuyerHome=()=>{
       {/* New Finds */}
       <Section title="New Handmade Finds" onSeeAll={()=>setPage('explore')}>
         <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-2">
-          {[...PRODUCTS].reverse().slice(0,4).map(p=>(
+          {[...allProducts].reverse().slice(0,4).map(p=>(
             <ProductCard key={p.id} product={p} compact onClick={()=>{setSelectedProduct(p);setPage('productDetail');}}/>
           ))}
         </div>
@@ -1934,10 +2003,11 @@ const ProductCard=({product:p,compact,onClick})=>{
   const artisan=ARTISANS.find(a=>a.id===p.artisanId);
   const{wishlist,toggleWishlist}=useContext(AppContext);
   const isWished=wishlist.includes(p.id);
+  const imgSrc=(p.images&&p.images[0])||'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" fill="%23f5f0eb"><rect width="400" height="300"/><text x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="20" fill="%23bbb">Craft</text></svg>');
   return (
     <div onClick={onClick} className={`${compact?'min-w-[160px] w-[160px]':'w-full'} bg-white rounded-2xl overflow-hidden card-shadow cursor-pointer active:scale-95 transition-transform`}>
       <div className="relative">
-        <img src={p.images[0]} className={`${compact?'h-40':'h-52'} w-full object-cover`} alt={p.name}/>
+        <img src={imgSrc} className={`${compact?'h-40':'h-52'} w-full object-cover`} alt={p.name}/>
         <div className="absolute top-2 left-2"><Badge variant="default" className="bg-white/90 backdrop-blur-sm text-warm-700 text-[10px]">{p.category}</Badge></div>
         <button onClick={(e)=>{e.stopPropagation();toggleWishlist(p.id);}} className="absolute top-2 right-2 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center">
           <Icon name="heart" size={16} className={isWished?'text-red-500':'text-warm-400'}/>
@@ -1945,7 +2015,7 @@ const ProductCard=({product:p,compact,onClick})=>{
       </div>
       <div className="p-3">
         <p className={`font-medium text-warm-800 ${compact?'text-xs truncate':'text-sm line-clamp-2'}`}>{p.name}</p>
-        {artisan&&!compact&&<p className="text-xs text-warm-400 mt-1">by {artisan.name}</p>}
+        {(!compact&&<p className="text-xs text-warm-400 mt-1">by {artisan?.name||p.artisanName||'Artisan'}</p>)}
         <div className="flex items-center justify-between mt-2">
           <p className="font-bold text-terra-600 text-sm">₹{p.price.toLocaleString('en-IN')}</p>
           {p.region&&!compact&&<span className="text-[10px] text-warm-400">{p.region}</span>}
@@ -1957,12 +2027,13 @@ const ProductCard=({product:p,compact,onClick})=>{
 
 // ==================== BUYER EXPLORE ====================
 const BuyerExplore=()=>{
-  const {setPage,setSelectedProduct,setSelectedArtisan,searchQuery,setSearchQuery}=useContext(AppContext);
+  const {setPage,setSelectedProduct,setSelectedArtisan,searchQuery,setSearchQuery,myProducts}=useContext(AppContext);
   const [selectedCat,setSelectedCat]=useState(null);
   const [selectedReg,setSelectedReg]=useState(null);
   const [priceRange,setPriceRange]=useState(null);
+  const allProducts=[...PRODUCTS,...(myProducts||[])];
 
-  let filtered=PRODUCTS;
+  let filtered=allProducts;
   if(searchQuery)filtered=filtered.filter(p=>p.name.toLowerCase().includes(searchQuery.toLowerCase())||p.category.toLowerCase().includes(searchQuery.toLowerCase()));
   if(selectedCat)filtered=filtered.filter(p=>p.category===selectedCat);
   if(selectedReg)filtered=filtered.filter(p=>p.region===selectedReg);
@@ -2029,7 +2100,7 @@ const BuyerExplore=()=>{
 
 // ==================== PRODUCT DETAIL ====================
 const ProductDetail=()=>{
-  const {selectedProduct,setPage,setSelectedArtisan,addToCart,showNotif,wishlist,toggleWishlist}=useContext(AppContext);
+  const {selectedProduct,setPage,setSelectedArtisan,addToCart,showNotif,wishlist,toggleWishlist,myProducts}=useContext(AppContext);
   const [showInquiry,setShowInquiry]=useState(false);
   const [inquiryMsg,setInquiryMsg]=useState('');
   const [inquiryQty,setInquiryQty]=useState('1');
@@ -2038,7 +2109,8 @@ const ProductDetail=()=>{
   if(!p)return null;
   const isWished=wishlist.includes(p.id);
   const artisan=ARTISANS.find(a=>a.id===p.artisanId);
-  const similar=PRODUCTS.filter(x=>x.category===p.category&&x.id!==p.id).slice(0,3);
+  const allProducts=[...PRODUCTS,...(myProducts||[])];
+  const similar=allProducts.filter(x=>x.category===p.category&&x.id!==p.id).slice(0,3);
 
   return (
     <div className="pb-8">
@@ -2055,9 +2127,9 @@ const ProductDetail=()=>{
 
       {/* Image */}
       <div className="relative">
-        <img src={p.images[0]} className="w-full h-72 object-cover" alt={p.name}/>
+        <img src={(p.images&&p.images[0])||'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" fill="%23f5f0eb"><rect width="400" height="300"/><text x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="20" fill="%23bbb">Craft</text></svg>')} className="w-full h-72 object-cover" alt={p.name}/>
         <div className="absolute bottom-3 left-3 flex gap-1.5">
-          {p.images.map((_,i)=>(
+          {(p.images||[]).map((_,i)=>(
             <div key={i} className={`w-2 h-2 rounded-full ${i===0?'bg-white':'bg-white/50'}`}/>
           ))}
         </div>
@@ -2096,20 +2168,20 @@ const ProductDetail=()=>{
         </div>
 
         {/* Artisan */}
-        {artisan&&(
+        {(artisan||p.artisanName)&&(
           <div className="bg-white rounded-2xl p-4 card-shadow mb-4">
             <p className="text-xs text-warm-400 uppercase tracking-wide mb-3">Made by</p>
-            <div className="flex items-center gap-3 cursor-pointer" onClick={()=>{setSelectedArtisan(artisan);setPage('artisanDetail');}}>
-              <img src={artisan.photo} className="w-14 h-14 rounded-full object-cover" alt={artisan.name}/>
+            <div className="flex items-center gap-3" onClick={()=>{if(artisan){setSelectedArtisan(artisan);setPage('artisanDetail');}}}>
+              <img src={artisan?.photo||'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" fill="%23f5f0eb"><rect width="56" height="56" rx="28"/><text x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="18" fill="%23bbb">A</text></svg>')} className="w-14 h-14 rounded-full object-cover" alt={artisan?.name||p.artisanName}/>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <p className="font-semibold text-warm-800">{artisan.name}</p>
+                  <p className="font-semibold text-warm-800">{artisan?.name||p.artisanName||'Artisan'}</p>
                   <VerifiedBadge/>
                 </div>
-                <p className="text-xs text-warm-500">{artisan.craft}</p>
-                <p className="text-xs text-warm-400 flex items-center gap-0.5"><Icon name="mapPin" size={10}/> {artisan.region}</p>
+                <p className="text-xs text-warm-500">{artisan?.craft||p.category}</p>
+                <p className="text-xs text-warm-400 flex items-center gap-0.5"><Icon name="mapPin" size={10}/> {artisan?.region||p.artisanLocation||p.region||'India'}</p>
               </div>
-              <Icon name="chevronRight" size={16} className="text-warm-300"/>
+              {artisan&&<Icon name="chevronRight" size={16} className="text-warm-300"/>}
             </div>
           </div>
         )}
@@ -2117,15 +2189,15 @@ const ProductDetail=()=>{
         {/* Craft Story */}
         <div className="bg-gradient-to-br from-terra-50 to-mustard-50 rounded-2xl p-5 mb-4 border border-terra-100">
           <p className="text-xs text-terra-500 uppercase tracking-wide font-semibold mb-2">THE STORY BEHIND THIS CRAFT</p>
-          <p className="text-sm text-warm-700 leading-relaxed mb-3 italic">"Made by {artisan?.name||'a skilled artisan'} in {artisan?.region||'India'}, this {p.category?.toLowerCase()||'handcrafted'} piece reflects the traditional practice of {p.materials?.[0]?.toLowerCase()||'handcrafting'} and {p.tags?.[0]?.toLowerCase()||'artistry'}. {p.description?.substring(0,80)||'Each piece carries generations of skill and cultural heritage'}."</p>
+          <p className="text-sm text-warm-700 leading-relaxed mb-3 italic">"Made by {artisan?.name||p.artisanName||'a skilled artisan'} in {artisan?.region||p.artisanLocation||'India'}, this {p.category?.toLowerCase()||'handcrafted'} piece reflects the traditional practice of {p.materials?.[0]?.toLowerCase()||'handcrafting'} and {p.tags?.[0]?.toLowerCase()||'artistry'}. {p.description?.substring(0,80)||'Each piece carries generations of skill and cultural heritage'}."</p>
           <div className="bg-white/50 rounded-xl p-3 mb-3">
             <p className="text-xs text-warm-500 mb-1">Craft heritage</p>
-            <p className="text-sm text-warm-700">{artisan?.story?.substring(0,120)}...</p>
+            <p className="text-sm text-warm-700">{artisan?.story?.substring(0,120)||(p.description?.substring(0,120))||'Traditional handcrafted piece'}</p>
           </div>
           <div className="flex items-center gap-4 text-xs text-warm-500">
-            <span className="flex items-center gap-1"><Icon name="user" size={12}/> {artisan?.name}</span>
-            <span className="flex items-center gap-1"><Icon name="mapPin" size={12}/> {artisan?.region}</span>
-            <span className="flex items-center gap-1">⏱ {artisan?.yearsExp||10}+ years</span>
+            <span className="flex items-center gap-1"><Icon name="user" size={12}/> {artisan?.name||p.artisanName||'Artisan'}</span>
+            <span className="flex items-center gap-1"><Icon name="mapPin" size={12}/> {artisan?.region||p.region||'India'}</span>
+            {artisan&&<span className="flex items-center gap-1">⏱ {artisan.yearsExp||10}+ years</span>}
           </div>
         </div>
 
@@ -2246,10 +2318,11 @@ const ProductDetail=()=>{
 
 // ==================== ARTISAN DETAIL (BUYER VIEW) ====================
 const ArtisanDetail=()=>{
-  const {selectedArtisan,setPage,setSelectedProduct}=useContext(AppContext);
+  const {selectedArtisan,setPage,setSelectedProduct,myProducts}=useContext(AppContext);
   const a=selectedArtisan;
   if(!a)return null;
-  const products=PRODUCTS.filter(p=>p.artisanId===a.id);
+  const allProducts=[...PRODUCTS,...(myProducts||[])];
+  const products=allProducts.filter(p=>p.artisanId===a.id);
 
   return (
     <div className="pb-8">
