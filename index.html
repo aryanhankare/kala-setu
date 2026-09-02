@@ -303,58 +303,8 @@ const useT=()=>{const{lang}=useContext(AppContext);return(key=>T[lang]?.[key]||T
 
 // ==================== MOCK AI ====================
 const AI={
-  analyzeProduct:(photoDesc,voiceDesc)=>{
-    const category=voiceDesc.toLowerCase().includes("saree")||voiceDesc.toLowerCase().includes("weav")?"Textiles":
-                   voiceDesc.toLowerCase().includes("pottery")||voiceDesc.toLowerCase().includes("clay")?"Pottery":
-                   voiceDesc.toLowerCase().includes("jewel")||voiceDesc.toLowerCase().includes("silver")?"Jewellery":
-                   voiceDesc.toLowerCase().includes("bamboo")?"Bamboo":
-                   voiceDesc.toLowerCase().includes("wood")?"Woodwork":
-                   voiceDesc.toLowerCase().includes("embroid")?"Textiles":"Textiles";
-    const lower=voiceDesc.toLowerCase();
-    const sub=lower.includes("saree")?"Sarees":
-              lower.includes("dupatta")?"Dupattas":
-              lower.includes("scarf")||lower.includes("stole")?"Stoles":
-              lower.includes("basket")?"Baskets":
-              lower.includes("lamp")?"Lamps":
-              lower.includes("necklace")?"Necklaces":
-              lower.includes("earring")?"Earrings":
-              lower.includes("plate")?"Plates":
-              lower.includes("cushion")?"Cushions":
-              lower.includes("bowl")?"Bowls":
-              lower.includes("box")?"Boxes":
-              lower.includes("bedsheet")?"Bedsheets":"General";
-    const title=lower.includes("saree")?"Traditional Handwoven Cotton Saree":
-                lower.includes("dupatta")?"Hand-Embroidered Silk Dupatta":
-                lower.includes("scarf")||lower.includes("stole")?"Handwoven Cotton Stole":
-                lower.includes("basket")?"Handwoven Bamboo Storage Basket":
-                lower.includes("lamp")?"Handcrafted Table Lamp":
-                lower.includes("necklace")?"Handcrafted Silver Necklace":
-                lower.includes("earring")?"Traditional Silver Earrings":
-                lower.includes("plate")?"Hand-Engraved Decorative Plate":
-                lower.includes("cushion")?"Embroidered Cushion Cover Set":
-                lower.includes("bowl")?"Handcrafted Terracotta Bowl Set":
-                lower.includes("box")?"Hand-Carved Sandalwood Box":
-                lower.includes("bedsheet")||lower.includes("bed")?"Block Printed Cotton Bedsheet":
-                lower.includes("fabric")||lower.includes("cloth")?"Handwoven Cotton Fabric":"Handcrafted Artisan Product";
-    return {
-      identified: title,
-      category:`${category} → ${sub}`,
-      title: title,
-      description: voiceDesc.length>50?voiceDesc.substring(0,120)+"...":`A beautiful handmade ${title.toLowerCase()} crafted with care using traditional techniques. Each piece reflects the artisan's skill and heritage.`,
-      materials: lower.includes("dupatta")||lower.includes("silk")?["Silk","Hand-embroidered","Cotton thread"]:
-                 category==="Textiles"?(lower.includes("cotton")?["Cotton","Natural dyes","Handwoven"]:["Silk","Handwoven","Natural dyes"]):
-                 category==="Bamboo"?["Natural bamboo","Handwoven"]:
-                 category==="Pottery"?["Terracotta clay","Natural pigments"]:
-                 category==="Jewellery"?(lower.includes("silver")?["Sterling silver","Handcrafted","Filigree"]:["Gold-plated silver","Handcrafted"]):
-                 category==="Woodwork"?(lower.includes("sandalwood")?["Sandalwood","Brass","Hand-carved"]:["Rosewood","Hand-carved"]):["Brass","Hand-engraved"],
-      tags:[category==="Textiles"?"Handloom":"Handmade","Traditional","Handcrafted","India",category],
-      price: lower.includes("silk")||lower.includes("dupatta")?3200:lower.includes("necklace")||lower.includes("jewel")?4500:category==="Textiles"?2800:category==="Bamboo"?1500:category==="Pottery"?1800:category==="Jewellery"?3500:category==="Woodwork"?4200:2500,
-      minPrice: lower.includes("silk")||lower.includes("dupatta")?2600:lower.includes("necklace")||lower.includes("jewel")?3800:category=="Textiles"?2400:category=="Bamboo"?1200:category=="Pottery"?1400:category=="Jewellery"?3000:category=="Woodwork"?3500:2000,
-      maxPrice: lower.includes("silk")||lower.includes("dupatta")?3800:lower.includes("necklace")||lower.includes("jewel")?5500:category=="Textiles"?3500:category=="Bamboo"?1800:category=="Pottery"?2200:category=="Jewellery"?4500:category=="Woodwork"?5000:3000,
-    };
-  },
   enhancePhoto:(original)=>({before:original,after:original}),
-  translate:(text,lang)=>lang==="hi"?"हिंदी में अनुवादित: "+text:lang==="mr"?"मराठीत अनुवादित: "+text:text,
+  translate:(text,lang)=>lang==="hi"?"हिन्दी में अनुवादित: "+text:lang==="mr"?"मराठीत अनुवादित: "+text:text,
   getInsights:()=>[
     {icon:"📈",text:"Your products received 32% more views this week",type:"growth"},
     {icon:"🔥",text:"Customers are currently searching for handwoven cotton products",type:"trend"},
@@ -853,50 +803,71 @@ const AddProductFlow=()=>{
     reader.readAsDataURL(file);
   };
 
-  // --- REAL AI ANALYSIS WITH FALLBACK ---
-  const runAnalysis=async(photoData,voiceDesc)=>{
-    setIsAnalyzing(true);
-    setAnalyzeError(null);
-    setCatFlow(p=>({...p,step:1}));
-    try{
-      const controller=new AbortController();
-      const timeout=setTimeout(()=>controller.abort(),8000);
-      const resp=await fetch('/api/analyze',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({image:photoData,description:voiceDesc||''}),
-        signal:controller.signal
-      });
-      clearTimeout(timeout);
-      if(!resp.ok){
-        const errData=await resp.json().catch(()=>({}));
-        throw new Error(errData.error||'AI service unavailable');
-      }
-      const result=await resp.json();
-      setCatFlow(p=>({...p,step:2,result,finalPrice:result.suggestedPrice}));
-      setEditedTitle(result.title);
-      setEditedDesc(result.description);
-      setEditedPrice(String(result.suggestedPrice));
-      setEditedMaterials([...result.materials]);
-      setEditedTags([...result.tags]);
-      setIsAnalyzing(false);
-    }catch(err){
-      console.warn('Real AI failed, using fallback:',err.message);
-      const fallback=AI.analyzeProduct('photo',voiceDesc||'handwoven cotton saree traditional weaving');
-      const fbMin=fallback.minPrice||fallback.price||1200;
-      const fbMax=fallback.maxPrice||fallback.price||2000;
-      const fbSuggested=Math.round((fbMin+fbMax)/2);
-      const fallbackWithPrice={...fallback,minPrice:fbMin,maxPrice:fbMax,suggestedPrice:fbSuggested};
-      setCatFlow(p=>({...p,step:2,result:fallbackWithPrice,finalPrice:fbSuggested}));
-      setEditedTitle(fallback.title);
-      setEditedDesc(fallback.description);
-      setEditedPrice(String(fbSuggested));
-      setEditedMaterials([...fallback.materials]);
-      setEditedTags([...fallback.tags]);
-      setIsAnalyzing(false);
-      setAnalyzeError('AI service unavailable — using offline analysis. You can edit all fields below.');
+  // --- REAL AI ANALYSIS ---
+const runAnalysis=async(photoData,voiceDesc)=>{
+  setIsAnalyzing(true);
+  setAnalyzeError(null);
+  setCatFlow(p=>({...p,step:1}));
+
+  try{
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),15000);
+
+    const resp=await fetch('/api/analyze',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        image:photoData,
+        description:voiceDesc||''
+      }),
+      signal:controller.signal
+    });
+
+    clearTimeout(timeout);
+
+    if(!resp.ok){
+      const errData=await resp.json().catch(()=>({}));
+      throw new Error(errData.error||'AI service unavailable');
     }
-  };
+
+    const result=await resp.json();
+
+    const minPrice=Number(result.minPrice)||800;
+    const maxPrice=Number(result.maxPrice)||1500;
+    const suggestedPrice=Math.round((minPrice+maxPrice)/2);
+
+    const finalResult={
+      ...result,
+      minPrice,
+      maxPrice,
+      suggestedPrice
+    };
+
+    setCatFlow(p=>({
+      ...p,
+      step:2,
+      result:finalResult,
+      finalPrice:suggestedPrice
+    }));
+
+    setEditedTitle(finalResult.title);
+    setEditedDesc(finalResult.description);
+    setEditedPrice(String(suggestedPrice));
+    setEditedMaterials(Array.isArray(finalResult.materials)?finalResult.materials:[]);
+    setEditedTags(Array.isArray(finalResult.tags)?finalResult.tags:[]);
+
+    setIsAnalyzing(false);
+
+  }catch(err){
+    console.warn('AI analysis failed:',err.message);
+
+    setIsAnalyzing(false);
+    setCatFlow(p=>({...p,step:0}));
+    setAnalyzeError(
+      'AI service unavailable — please try again or enter the product details manually.'
+    );
+  }
+};
 
   const exampleTranscripts=[
     "This is a handwoven cotton saree. I made it by hand using traditional weaving techniques. It took me about 8 days to complete.",
@@ -1050,7 +1021,7 @@ const AddProductFlow=()=>{
             <span className="text-xl">⚠️</span>
             <div>
               <p className="text-sm font-medium text-mustard-800">{analyzeError}</p>
-              <p className="text-xs text-mustard-600 mt-1">This is a basic offline estimate. Edit all fields below to match your product. For best results, try again when the AI service is available.</p>
+              <p className="text-xs text-mustard-600 mt-1">You can still edit all fields manually. For best results, try again when the AI service is available.</p>
             </div>
           </div>
         )}
@@ -1116,8 +1087,8 @@ const AddProductFlow=()=>{
         <div className={`${analyzeError?'bg-mustard-50 border border-mustard-200':'bg-forest-50 border border-forest-200'} rounded-2xl p-4 mb-5 flex items-start gap-3 animate-scale-in`}>
           <Icon name="sparkles" size={20} className={`${analyzeError?'text-mustard-600':'text-forest-600'} mt-0.5`}/>
           <div>
-            <p className={`font-semibold ${analyzeError?'text-mustard-700':'text-forest-700'} text-sm`}>{analyzeError?'Offline analysis — review & edit below':'AI-powered listing — review before publishing'}</p>
-            <p className={`text-xs ${analyzeError?'text-mustard-600':'text-forest-600'} mt-0.5`}>Edit any field before publishing your product</p>
+            <p className={`font-semibold ${analyzeError?'text-mustard-700':'text-forest-700'} text-sm`}>{analyzeError?'AI service unavailable — review & edit below':'AI-powered listing — review before publishing'}</p>
+            <p className={`text-xs ${analyzeError?'text-mustard-600':'text-forest-600'} mt-0.5`}>{analyzeError?'You can still edit all fields manually':'Edit any field before publishing your product'}</p>
           </div>
         </div>
 
