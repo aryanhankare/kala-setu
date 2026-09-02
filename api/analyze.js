@@ -98,7 +98,6 @@ Return ONLY the JSON object. No markdown, no explanation, no extra text.`;
         contents: [{ parts: userContent }],
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {
-          temperature: 0.4,
           maxOutputTokens: 1024,
           responseMimeType: 'application/json'
         }
