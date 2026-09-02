@@ -373,6 +373,7 @@ const App=()=>{
 
   const placeOrder=()=>{
     const orderNum="KS"+Date.now().toString(36).toUpperCase();
+    window.__lastOrderNum=orderNum;
     const newOrder={
       id:orderNum,
       items:[...cart],
@@ -929,13 +930,12 @@ const runAnalysis=async(photoData,voiceDesc)=>{
   const handlePublish=()=>{
     setPublishStep(1);
     const catStr=(catFlow.result&&catFlow.result.category)||'Other';
-    const catParts=catStr.split('\\u2192').map(s=>s.trim());
     const newProduct={
       id:Date.now(),
       artisanId:0,
       name:editedTitle,
-      category:catParts[0]||'Other',
-      subcategory:catParts[1]||'General',
+      category:catStr||'Other',
+      subcategory:(catFlow.result&&catFlow.result.subcategory)||'General',
       price:parseInt(editedPrice)||0,
       minPrice:(catFlow.result&&catFlow.result.minPrice)||0,
       maxPrice:(catFlow.result&&catFlow.result.maxPrice)||0,
@@ -1240,7 +1240,7 @@ const runAnalysis=async(photoData,voiceDesc)=>{
               <VerifiedBadge/>
             </div>
             <h3 className="font-bold text-lg text-warm-800 mb-1">{editedTitle}</h3>
-            <p className="text-sm text-warm-500 mb-3">{r.category}</p>
+            <p className="text-sm text-warm-500 mb-3">{r.category}{r.subcategory?' \u2192 '+r.subcategory:''}</p>
             <p className="text-sm text-warm-600 mb-3">{editedDesc}</p>
             <div className="flex flex-wrap gap-1.5 mb-3">
               {editedMaterials.map((m,i)=><Badge key={i} variant="terra">{m}</Badge>)}
@@ -1251,7 +1251,7 @@ const runAnalysis=async(photoData,voiceDesc)=>{
             <div className="flex items-center gap-2 text-sm text-warm-500 mb-3">
               <Icon name="mapPin" size={14}/> {artisanProfile.village||'India'}, {artisanProfile.state||''}
             </div>
-            <div className="text-2xl font-bold text-terra-600">₹{parseInt(editedPrice).toLocaleString('en-IN')}</div>
+            <div className="text-2xl font-bold text-terra-600">₹{(parseInt(editedPrice)||0).toLocaleString('en-IN')}</div>
           </div>
         </div>
 
@@ -1351,7 +1351,7 @@ const ArtisanProducts=()=>{
         </button>
         <h1 className="text-2xl font-bold text-terra-800 mb-6">Edit Product</h1>
         <div className="bg-white rounded-2xl overflow-hidden card-shadow mb-5">
-          <img src={editingProduct.images[0]} className="w-full h-40 object-cover" alt=""/>
+          <img src={(editingProduct.images&&editingProduct.images[0])||'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="160" fill="%23f5f0eb"><rect width="400" height="160"/><text x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="16" fill="%23bbb">No Image</text></svg>')} className="w-full h-40 object-cover" alt=""/>
         </div>
         <div className="space-y-4">
           <div className="bg-white rounded-2xl p-4 card-shadow">
@@ -1760,7 +1760,7 @@ const TranslationScreen=()=>{
 
 // ==================== ARTISAN PROFILE ====================
 const ArtisanProfilePage=()=>{
-  const {artisanProfile,setOnboarded,setRole}=useContext(AppContext);
+  const {artisanProfile,setOnboarded,setRole,setPage}=useContext(AppContext);
   const name=artisanProfile.name||"Savita Patil";
   const craft=artisanProfile.craft||"Handloom Weaver";
   const loc=`${artisanProfile.village||"Kolhapur"}, ${artisanProfile.state||"Maharashtra"}`;
@@ -1800,7 +1800,7 @@ const ArtisanProfilePage=()=>{
           {label:'AI Insights',icon:'sparkles',page:'insights'},
           {label:'Translation',icon:'translate',page:'translation'},
         ].map((item,i)=>(
-          <div key={i} className="bg-white rounded-xl px-4 py-3.5 flex items-center gap-3 card-shadow">
+          <div key={i} onClick={()=>setPage(item.page)} className="bg-white rounded-xl px-4 py-3.5 flex items-center gap-3 card-shadow cursor-pointer active:scale-[.98] transition-transform">
             <Icon name={item.icon} size={18} className="text-terra-500"/>
             <span className="flex-1 text-sm font-medium text-warm-700">{item.label}</span>
             <Icon name="chevronRight" size={16} className="text-warm-300"/>
@@ -2015,7 +2015,7 @@ const BuyerExplore=()=>{
   const allProducts=[...PRODUCTS,...(myProducts||[])];
 
   let filtered=allProducts;
-  if(searchQuery)filtered=filtered.filter(p=>p.name.toLowerCase().includes(searchQuery.toLowerCase())||p.category.toLowerCase().includes(searchQuery.toLowerCase()));
+  if(searchQuery){const q=searchQuery.toLowerCase();filtered=filtered.filter(p=>p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q)||(p.description||'').toLowerCase().includes(q)||(p.materials||[]).join(' ').toLowerCase().includes(q)||(p.tags||[]).join(' ').toLowerCase().includes(q)||(p.artisanName||'').toLowerCase().includes(q));}
   if(selectedCat)filtered=filtered.filter(p=>p.category===selectedCat);
   if(selectedReg)filtered=filtered.filter(p=>p.region===selectedReg);
   if(priceRange)filtered=filtered.filter(p=>p.price>=priceRange[0]&&p.price<=priceRange[1]);
@@ -2241,7 +2241,7 @@ const ProductDetail=()=>{
             <h3 className="font-semibold text-warm-800 mb-3">Because you liked {p.subcategory||p.category}</h3>
             <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-2">
               {similar.map(sp=>(
-                <ProductCard key={sp.id} product={sp} compact onClick={()=>{}}/>
+                <ProductCard key={sp.id} product={sp} compact onClick={()=>{setSelectedProduct(sp);setPage('productDetail');}}/>
               ))}
             </div>
           </div>
@@ -2274,7 +2274,7 @@ const ProductDetail=()=>{
               <h3 className="font-bold text-warm-800 text-lg mb-1">Enquire about this craft</h3>
               <p className="text-sm text-warm-500 mb-4">Message {artisan?.name||'the artisan'} about {p.name}</p>
               <div className="bg-warm-50 rounded-xl p-3 flex items-center gap-3 mb-4">
-                <img src={p.images&&p.images[0]} className="w-12 h-12 rounded-lg object-cover" alt=""/>
+                <img src={(p.images&&p.images[0])||'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="%23f5f0eb"><rect width="48" height="48"/><text x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="10" fill="%23bbb">Item</text></svg>')} className="w-12 h-12 rounded-lg object-cover" alt=""/>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-warm-800 truncate">{p.name}</p>
                   <p className="text-xs text-terra-600 font-bold">₹{p.price.toLocaleString('en-IN')}</p>
@@ -2385,7 +2385,7 @@ const BuyerCart=()=>{
           const artisan=ARTISANS.find(a=>a.id===item.artisanId);
           return (
             <div key={item.id} className="bg-white rounded-2xl p-3 flex gap-3 card-shadow">
-              <img src={item.images[0]} className="w-20 h-20 rounded-xl object-cover" alt={item.name}/>
+              <img src={(item.images&&item.images[0])||'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" fill="%23f5f0eb"><rect width="80" height="80"/><text x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="12" fill="%23bbb">Item</text></svg>')} className="w-20 h-20 rounded-xl object-cover" alt={item.name}/>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm text-warm-800 truncate">{item.name}</p>
                 <p className="text-xs text-warm-400">{artisan?.name}</p>
@@ -2478,8 +2478,8 @@ const CheckoutPage=()=>{
 
 // ==================== ORDER CONFIRMED ====================
 const OrderConfirmed=()=>{
-  const {setPage}=useContext(AppContext);
-  const orderNum="KS"+Date.now().toString(36).toUpperCase().slice(0,6);
+  const {setPage,orders}=useContext(AppContext);
+  const orderNum=(orders&&orders[0]?orders[0].id:window.__lastOrderNum)||'KS'+Date.now().toString(36).toUpperCase().slice(0,6);
 
   return (
     <div className="px-5 pt-12 pb-8 flex flex-col items-center justify-center min-h-[80vh] text-center">
@@ -2528,7 +2528,7 @@ const BuyerOrdersPage=()=>{
               </div>
               {o.items.map(item=>(
                 <div key={item.id} className="flex gap-3 py-2">
-                  <img src={item.images[0]} className="w-12 h-12 rounded-lg object-cover" alt={item.name}/>
+                  <img src={(item.images&&item.images[0])||'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="%23f5f0eb"><rect width="48" height="48"/><text x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="10" fill="%23bbb">Item</text></svg>')} className="w-12 h-12 rounded-lg object-cover" alt={item.name}/>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-warm-800 truncate">{item.name}</p>
                     <p className="text-xs text-warm-400">Qty: {item.qty}</p>
