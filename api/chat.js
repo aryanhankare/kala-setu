@@ -100,7 +100,6 @@ If the user asks something outside KalaSetu/artisan selling, politely say you ar
         contents: [{ parts: [{ text: fullUserMessage }] }],
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {
-          temperature: 0.7,
           maxOutputTokens: 512,
         }
       })
