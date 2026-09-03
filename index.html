@@ -751,7 +751,7 @@ const OnboardingFlow=()=>{
           </div>
 
           <div className="flex gap-3 mt-8">
-            <button onClick={()=>setStep(0)} className="px-6 py-4 rounded-xl font-medium text-[#64748b] border border-[#1e293b] bg-white">Back</button>
+            <button onClick={()=>setStep(0)} className="px-6 py-4 rounded-xl font-medium text-[#64748b] border border-[#1e293b] bg-[#151e29] hover:bg-[#1b2634] transition-colors">Back</button>
             <button onClick={()=>setStep(2)} disabled={!artisanProfile.state}
               className={`flex-1 py-4 rounded-xl font-semibold text-lg transition-all ${artisanProfile.state?'bg-[#6366f1] text-[#f1f5f9] shadow-elevated active:scale-[.97]':'bg-[#151e29] text-[#64748b] cursor-not-allowed'}`}>
               Continue
@@ -778,7 +778,7 @@ const OnboardingFlow=()=>{
           </div>
 
           <div className="flex gap-3 mt-8">
-            <button onClick={()=>setStep(1)} className="px-6 py-4 rounded-xl font-medium text-[#64748b] border border-[#1e293b] bg-white">Back</button>
+            <button onClick={()=>setStep(1)} className="px-6 py-4 rounded-xl font-medium text-[#64748b] border border-[#1e293b] bg-[#151e29] hover:bg-[#1b2634] transition-colors">Back</button>
             <button onClick={()=>setStep(3)} className="flex-1 py-4 rounded-xl font-semibold text-lg bg-[#6366f1] text-[#f1f5f9] shadow-elevated active:scale-[.97] transition-all">
               Continue
             </button>
@@ -887,13 +887,13 @@ const ArtisanDashboard=()=>{
 
       <div className="grid grid-cols-2 gap-3 mb-6">
         {[
-          {icon:'package',label:t('myProducts'),value:myProducts.length||15, color:'terra'},
-          {icon:'truck',label:t('orders'),value:totalOrders||24, color:'forest'},
-          {icon:'rupee',label:t('earnings'),value:`₹${(totalEarnings||18450).toLocaleString('en-IN')}`, color:'mustard'},
-          {icon:'sparkles',label:t('insights'),value:'4 new', color:'terra'},
+          {icon:'package',label:t('myProducts'),value:myProducts.length||15, bg:'bg-[#eef2ff]', tc:'text-[#6366f1]'},
+          {icon:'truck',label:t('orders'),value:totalOrders||24, bg:'bg-[#0e2f38]', tc:'text-[#22d3ee]'},
+          {icon:'rupee',label:t('earnings'),value:`\u20B9${(totalEarnings||18450).toLocaleString('en-IN')}`, bg:'bg-[#0e2f38]', tc:'text-[#22d3ee]'},
+          {icon:'sparkles',label:t('insights'),value:'4 new', bg:'bg-[#eef2ff]', tc:'text-[#6366f1]'},
         ].map((c,i)=>(
-          <div key={i} className={`bg-[#151e29] rounded-xl p-4 shadow-card border border-[#1e293b]/40 animate-slide-up`} style={{animationDelay:`${i*50}ms`}}>
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 bg-${c.color}-50 text-${c.color}-500`}>
+          <div key={i} className="bg-[#151e29] rounded-xl p-4 shadow-card border border-[#1e293b]/40 animate-slide-up" style={{animationDelay:`${i*50}ms`}}>
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${c.bg} ${c.tc}`}>
               <Icon name={c.icon} size={18}/>
             </div>
             <p className="text-[17px] font-bold text-[#e2e8f0]">{c.value}</p>
@@ -919,9 +919,9 @@ const ArtisanDashboard=()=>{
 
       {/* Quick Actions */}
       <div className="grid grid-cols-4 gap-2 mb-6">
-        {[{icon:'plus',label:'Add Craft',pg:'addProduct',clr:'terra'},{icon:'package',label:'Products',pg:'products',clr:'forest'},{icon:'message',label:'Inquiries',pg:'insights',clr:'mustard'},{icon:'trendingUp',label:'Insights',pg:'insights',clr:'terra'}].map((a,i)=>(
+        {[{icon:'plus',label:'Add Craft',pg:'addProduct',bg:'bg-[#eef2ff]',tc:'text-[#6366f1]'},{icon:'package',label:'Products',pg:'products',bg:'bg-[#0e2f38]',tc:'text-[#22d3ee]'},{icon:'message',label:'Inquiries',pg:'insights',bg:'bg-[#0e2f38]',tc:'text-[#22d3ee]'},{icon:'trendingUp',label:'Insights',pg:'insights',bg:'bg-[#eef2ff]',tc:'text-[#6366f1]'}].map((a,i)=>(
           <button key={i} onClick={()=>setPage(a.pg)} className="bg-[#151e29] rounded-xl p-3 flex flex-col items-center gap-1.5 shadow-card">
-            <div className={`w-9 h-9 rounded-lg flex items-center justify-center bg-${a.clr}-50 text-${a.clr}-500`}><Icon name={a.icon} size={16}/></div>
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${a.bg} ${a.tc}`}><Icon name={a.icon} size={16}/></div>
             <span className="text-[10px] font-medium text-[#64748b]">{a.label}</span>
           </button>
         ))}
@@ -1583,7 +1583,7 @@ const ArtisanProducts=()=>{
           </div>
         </div>
         <div className="flex gap-3 mt-6">
-          <button onClick={()=>setEditingProduct(null)} className="flex-1 py-3.5 rounded-xl font-medium text-[#64748b] border border-[#1e293b] bg-white">Cancel</button>
+          <button onClick={()=>setEditingProduct(null)} className="flex-1 py-3.5 rounded-xl font-medium text-[#64748b] border border-[#1e293b] bg-[#151e29] hover:bg-[#1b2634] transition-colors">Cancel</button>
           <button onClick={saveEdit} className="flex-1 py-3.5 rounded-xl font-semibold text-[#f1f5f9] bg-[#6366f1] shadow-elevated">Save Changes</button>
         </div>
       </div>
